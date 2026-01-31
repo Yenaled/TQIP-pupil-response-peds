@@ -48,25 +48,9 @@ make_path <- function(x, y) {
   sprintf("/Users/hunter/Downloads/Carilion/TQIP 2007-2023/PUF AY %s/CSV/%s", x, y)
 }
 ### Year to analyze ###
-
 args <- commandArgs(trailingOnly = TRUE)
+year <- 2018# e.g. 2023
 
-years <- if (length(args) >= 1) {
-  args
-} else {
-  as.character(2018:2023)
-}
-
-for (year in years) {
-  message("Processing year: ", year)
-  df <- make_path(year, "PUF_TRAUMA.csv")
-  if (!file.exists(df)) {
-    warning("File not found: ", df)
-    next
-  }
-  cols <- names(read.csv(df, nrows = 1))
-  print(cols)  # or whatever you need next
-}
 ### The output path ###
 
 output_path <- "final_data"
@@ -86,8 +70,7 @@ log_step <- function(df, name, log_df) {
   )
 }
 
-
-#cols <- names(read.csv(make_path(year, "PUF_TRAUMA.csv"), nrows = 1))
+cols <- names(read.csv(make_path(year, "PUF_TRAUMA.csv"), nrows = 1))
 drop <- grepl("_biu$", cols, ignore.case = TRUE)
 colClasses <- ifelse(drop, "NULL", NA)
 df <- read.csv(make_path(year, "PUF_TRAUMA.csv"), colClasses = colClasses)
