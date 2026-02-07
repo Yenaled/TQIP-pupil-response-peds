@@ -556,21 +556,21 @@ data_analytic <- data_analytic %>%
 
 data_analytic <- data_analytic %>%
   mutate(
-    mort_inhospital = case_when(
+    mort_inhospital = factor(case_when(
       hospdischargedisposition == 5  ~ 1L,
       hospdischargedisposition %in% c(1:99) ~ 0L,  # other valid codes
       TRUE ~ NA_integer_
-    ),
-    ltc_inhospital = case_when(
+    )),
+    ltc_inhospital = factor(case_when(
       hospdischargedisposition == 12 ~ 1L,
       hospdischargedisposition %in% c(1:99) ~ 0L,
       TRUE ~ NA_integer_
-    ),
-    withdrawallst_bin = case_when(
+    )),
+    withdrawallst_bin = factor(case_when(
       withdrawallst == 2 ~ 0L,
       withdrawallst == 1 ~ 1L,
       TRUE ~ NA_integer_
-    )
+    ))
 )
 
 ######## Propensity matching ########
