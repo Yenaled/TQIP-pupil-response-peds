@@ -158,8 +158,8 @@ transform_analysis_vars <- function(df) {
         !is.na(totalgcs) & totalgcs <= 8  ~ "Severe",
         !is.na(totalgcs) & totalgcs <= 12 ~ "Moderate",
         !is.na(totalgcs)                  ~ "Mild",
-        TRUE ~ NA_character_
-      ) %>% factor(levels = c("Mild", "Moderate", "Severe")),
+        TRUE ~ "Unknown"
+      ) %>% factor(levels = c("Mild", "Moderate", "Severe", "Unknown")),
       iss_cat = case_when(
         iss < 12  ~ "ISS < 12",
         iss >= 12 & iss <= 24 ~ "ISS 12-24",
