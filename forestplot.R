@@ -264,3 +264,55 @@ ggsave(
 cat("Wrote:\n")
 cat("  analysis/forest_plot_combined_risk.pdf\n")
 
+
+########## Discharge disposition forest plots ##########
+
+dispo_file <- "analysis/dispo_analysis.csv"
+
+if (file.exists(dispo_file)) {
+  df_dispo <- read_csv(dispo_file, show_col_types = FALSE) %>% prep_df()
+
+  df_dispo_rr    <- df_dispo %>% filter(str_detect(model, "Risk"))
+  df_dispo_logit <- df_dispo %>% filter(str_detect(model, "Logistic"))
+
+  # Risk ratio forest plot for discharge dispositions
+  if (nrow(df_dispo_rr) >= 1) {
+    plot_dispo_rr <- tryCatch(
+      make_combo_plot(df_dispo_rr, kind = "risk"),
+      error = function(e) { message("Dispo RR plot error: ", e$message); NULL }
+    )
+    if (!is.null(plot_dispo_rr)) {
+      h_dispo_rr <- attr(plot_dispo_rr, "plot_height")
+      ggsave(
+        "analysis/forest_plot_dispo_risk.pdf",
+        plot_dispo_rr,
+        width = 12.5,
+        height = h_dispo_rr,
+        units = "in"
+      )
+      cat("  analysis/forest_plot_dispo_risk.pdf\n")
+    }
+  }
+
+  # Logistic (OR) forest plot for discharge dispositions
+  if (nrow(df_dispo_logit) >= 1) {
+    plot_dispo_or <- tryCatch(
+      make_combo_plot(df_dispo_logit, kind = "logistic"),
+      error = function(e) { message("Dispo OR plot error: ", e$message); NULL }
+    )
+    if (!is.null(plot_dispo_or)) {
+      h_dispo_or <- attr(plot_dispo_or, "plot_height")
+      ggsave(
+        "analysis/forest_plot_dispo_logistic.pdf",
+        plot_dispo_or,
+        width = 12.5,
+        height = h_dispo_or,
+        units = "in"
+      )
+      cat("  analysis/forest_plot_dispo_logistic.pdf\n")
+    }
+  }
+} else {
+  cat("Note: dispo_analysis.csv not found — run analysis.R first.\n")
+}
+
