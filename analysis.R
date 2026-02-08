@@ -29,7 +29,7 @@ raw_df <- read.csv(fname)
 
 raw_df$pupils <- NA_character_
 raw_df$pupils[raw_df$tbipupillaryresponse == 3] <-"ABPR"
-raw_df$pupils[raw_df$tbipupillaryresponse < 3] <- "PPR"
+raw_df$pupils[raw_df$tbipupillaryresponse == 1] <- "PPR"
 df <- raw_df
 
 ###### Create a data summary table #######
@@ -264,7 +264,6 @@ apply_analytic_filters <- function(data_frame) {
   filter(!is.na(sex), sex %in% c(1,2))%>%
   filter(!is.na(teachingstatus))%>%
   filter(!is.na(verificationlevel))%>%
-  filter(!is.na(totalgcs))%>%
   filter(!is.na(iss))%>%
   filter(!is.na(tbimidlineshift), tbimidlineshift %in% c(1,2))%>%
   filter(!is.na(statedesignation), statedesignation %in% c(1,2,3,4,6))%>% # 5 doesn't exist for statedesignation and 7 = "not applicable"
@@ -1221,8 +1220,186 @@ table_pupils_trachpeg <- dplyr::bind_rows(header_rows2, cont_rows2, cat_rows2) %
   )
 
 readr::write_csv(table_pupils_trachpeg, file.path(output_dir, "table_absentpupils_trachpeg_vs_none.csv"))
-              
-              
-              
-              
-              
+
+
+######### Age-stratified table: discharge outcomes by pupillary response #############
+
+# Define age groups as requested: 0-2, 3-5, 6-12, 13-18
+matched_age <- matched %>%
+  mutate(
+    age_group = case_when(
+      ageyears >= 0 & ageyears <= 2  ~ "0-2 years",
+      ageyears >= 3 & ageyears <= 5  ~ "3-5 years",
+      ageyears >= 6 & ageyears <= 12 ~ "6-12 years",
+      ageyears >= 13 & ageyears <= 18 ~ "13-18 years",
+      TRUE ~ NA_character_
+    ) %>% factor(levels = c("0-2 years", "3-5 years", "6-12 years", "13-18 years")),
+    # Discharge disposition categories (NTDS codes)
+    dispo_mortality    = as.integer(hospdischargedisposition == 5),
+    dispo_home         = as.integer(hospdischargedisposition == 6),
+    dispo_home_health  = as.integer(hospdischargedisposition == 3),
+    dispo_short_rehab  = as.integer(hospdischargedisposition == 14),
+    dispo_icf          = as.integer(hospdischargedisposition == 2),
+    dispo_ltch         = as.integer(hospdischargedisposition == 12),
+    dispo_snf          = as.integer(hospdischargedisposition == 7),
+    dispo_hospice      = as.integer(hospdischargedisposition == 8),
+    dispo_inpt_rehab   = as.integer(hospdischargedisposition == 13)
+  ) %>%
+  filter(!is.na(age_group), !is.na(hospdischargedisposition))
+
+dispo_vars <- c(
+  "dispo_mortality", "dispo_home", "dispo_home_health",
+  "dispo_short_rehab", "dispo_icf", "dispo_ltch",
+  "dispo_snf", "dispo_hospice", "dispo_inpt_rehab"
+)
+dispo_labels <- c(
+  "Mortality", "Home", "Home health",
+  "Short-term rehab", "Intermediate care facility", "LTCH",
+  "SNF", "Hospice", "Inpatient rehab"
+)
+
+age_levels <- levels(matched_age$age_group)
+pupil_levels <- levels(matched_age$pupils)
+
+# Build the age-stratified table
+age_strat_rows <- list()
+
+for (ag in age_levels) {
+  sub <- matched_age %>% filter(age_group == ag)
+  n_total <- nrow(sub)
+  n_ppr  <- sum(sub$pupils == pupil_levels[1], na.rm = TRUE)
+  n_abpr <- sum(sub$pupils == pupil_levels[2], na.rm = TRUE)
+
+  # Header row for this age group
+  age_strat_rows[[length(age_strat_rows) + 1]] <- tibble(
+    age_group = ag,
+    outcome = "N",
+    ppr_n = as.character(n_ppr),
+    ppr_pct = "",
+    abpr_n = as.character(n_abpr),
+    abpr_pct = "",
+    p_value = ""
+  )
+
+  for (i in seq_along(dispo_vars)) {
+    dv <- dispo_vars[i]
+    dl <- dispo_labels[i]
+
+    ppr_sub  <- sub %>% filter(pupils == pupil_levels[1])
+    abpr_sub <- sub %>% filter(pupils == pupil_levels[2])
+
+    ppr_count  <- sum(ppr_sub[[dv]], na.rm = TRUE)
+    abpr_count <- sum(abpr_sub[[dv]], na.rm = TRUE)
+
+    ppr_pct  <- if (n_ppr > 0)  100 * ppr_count / n_ppr   else NA_real_
+    abpr_pct <- if (n_abpr > 0) 100 * abpr_count / n_abpr else NA_real_
+
+    # Fisher's exact test for small cell counts
+    tbl <- matrix(c(
+      ppr_count, n_ppr - ppr_count,
+      abpr_count, n_abpr - abpr_count
+    ), nrow = 2, byrow = TRUE)
+
+    p_val <- tryCatch({
+      if (n_ppr > 0 && n_abpr > 0) {
+        fisher.test(tbl)$p.value
+      } else {
+        NA_real_
+      }
+    }, error = function(e) NA_real_)
+
+    age_strat_rows[[length(age_strat_rows) + 1]] <- tibble(
+      age_group = ag,
+      outcome = dl,
+      ppr_n = as.character(ppr_count),
+      ppr_pct = if (!is.na(ppr_pct)) sprintf("%.1f%%", ppr_pct) else "—",
+      abpr_n = as.character(abpr_count),
+      abpr_pct = if (!is.na(abpr_pct)) sprintf("%.1f%%", abpr_pct) else "—",
+      p_value = fmt_p(p_val)
+    )
+  }
+}
+
+age_strat_table <- bind_rows(age_strat_rows)
+
+# Rename columns for clarity
+names(age_strat_table) <- c(
+  "Age Group", "Outcome",
+  paste0(pupil_levels[1], " (n)"), paste0(pupil_levels[1], " (%)"),
+  paste0(pupil_levels[2], " (n)"), paste0(pupil_levels[2], " (%)"),
+  "P value"
+)
+
+write.csv(age_strat_table, file.path(output_dir, "age_stratified_dispo_by_pupils.csv"), row.names = FALSE)
+
+
+######### Discharge disposition regression analyses (matched cohort) #############
+
+# Create binary outcome variables for each discharge disposition
+matched_dispo <- matched %>%
+  filter(!is.na(hospdischargedisposition)) %>%
+  mutate(
+    dispo_mortality    = factor(as.integer(hospdischargedisposition == 5)),
+    dispo_home         = factor(as.integer(hospdischargedisposition == 6)),
+    dispo_home_health  = factor(as.integer(hospdischargedisposition == 3)),
+    dispo_short_rehab  = factor(as.integer(hospdischargedisposition == 14)),
+    dispo_icf          = factor(as.integer(hospdischargedisposition == 2)),
+    dispo_ltch         = factor(as.integer(hospdischargedisposition == 12)),
+    dispo_snf          = factor(as.integer(hospdischargedisposition == 7)),
+    dispo_hospice      = factor(as.integer(hospdischargedisposition == 8)),
+    dispo_inpt_rehab   = factor(as.integer(hospdischargedisposition == 13))
+  )
+
+# Run risk ratio regressions for each discharge disposition
+dispo_formulas <- list(
+  "Mortality"                  = dispo_mortality ~ pupils,
+  "Home"                       = dispo_home ~ pupils,
+  "Home health"                = dispo_home_health ~ pupils,
+  "Short-term rehab"           = dispo_short_rehab ~ pupils,
+  "Intermediate care facility" = dispo_icf ~ pupils,
+  "LTCH"                       = dispo_ltch ~ pupils,
+  "SNF"                        = dispo_snf ~ pupils,
+  "Hospice"                    = dispo_hospice ~ pupils,
+  "Inpatient rehab"            = dispo_inpt_rehab ~ pupils
+)
+
+dispo_results <- list()
+
+for (outcome_name in names(dispo_formulas)) {
+  frm <- dispo_formulas[[outcome_name]]
+  resp_var <- as.character(frm[[2]])
+
+  # Check if there are events in both groups
+  tbl <- table(matched_dispo[[resp_var]], matched_dispo$pupils)
+  has_events <- all(dim(tbl) == 2) && all(tbl[2, ] >= 0)
+  n_events <- sum(as.integer(as.character(matched_dispo[[resp_var]])), na.rm = TRUE)
+
+  if (n_events >= 3 && has_events) {
+    # Risk ratio
+    rr_out <- tryCatch(
+      run_rr_cluster(frm, matched_dispo, matched_dispo$subclass),
+      error = function(e) NULL
+    )
+    if (!is.null(rr_out)) {
+      dispo_results[[length(dispo_results) + 1]] <-
+        summ_rr(rr_out, outcome_name, nrow(matched_dispo), term = term_name)
+    }
+
+    # Logistic (OR)
+    or_out <- tryCatch(
+      run_logit_cluster(frm, matched_dispo, matched_dispo$subclass),
+      error = function(e) NULL
+    )
+    if (!is.null(or_out)) {
+      dispo_results[[length(dispo_results) + 1]] <-
+        summ_logit(or_out, outcome_name, nrow(matched_dispo), term = term_name)
+    }
+  }
+}
+
+dispo_results_table <- bind_rows(dispo_results) %>%
+  mutate(contrast = "Absent vs Present pupillary reflexes") %>%
+  select(outcome, model, contrast, n, estimate, ci_95, p_value)
+
+write.csv(dispo_results_table, file.path(output_dir, "dispo_analysis.csv"), row.names = FALSE)
+
